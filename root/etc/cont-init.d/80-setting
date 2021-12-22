@@ -1,0 +1,13 @@
+#!/usr/bin/with-contenv bash
+
+ENV_VARIABLES=$(awk 'BEGIN{for(v in ENVIRON) print "$"v}')
+
+FILES="/etc/modsecurity.d/modsecurity-override.conf"
+
+for FILE in $FILES; do
+    if [ -f "$FILE" ]; then
+        envsubst "$ENV_VARIABLES" <"$FILE" | sponge "$FILE"
+    fi
+done
+
+source /opt/modsecurity/activate-rules.sh
