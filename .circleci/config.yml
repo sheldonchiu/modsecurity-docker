@@ -47,7 +47,7 @@ jobs:
       - run:
           name: Build application Docker image
           command: |
-            apt-get update && apt-get upgrade -y docker
+            sudo apt-get update && sudo apt-get upgrade -y docker
             docker build -t $DOCKER_ENDPOINT/modsecurity-nginx:manifest-arm64v8 --build-arg ARCH=arm64v8/ .
       - run:
           name: Push application Docker image
