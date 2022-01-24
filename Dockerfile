@@ -3,9 +3,9 @@ FROM linuxserver/swag as build
 
 ARG NGINX_VERSION="1.20.2"
 
-ARG MODSEC_VERSION=3.0.6 \
-    FUZZY_VERSION=2.1.0 \
-    SSDEEP_VERSION=2.14.1
+ARG MODSEC_VERSION=3.0.6
+ARG FUZZY_VERSION=2.1.0
+ARG SSDEEP_VERSION=2.14.1
 
 RUN set -eux; \
     apk add --no-cache --virtual .build-deps \
