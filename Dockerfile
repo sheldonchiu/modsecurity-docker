@@ -1,0 +1,209 @@
+
+FROM linuxserver/swag as build
+
+ARG NGINX_VERSION="1.20.2"
+
+ARG MODSEC_VERSION=3.0.6 \
+    FUZZY_VERSION=2.1.0 \
+    SSDEEP_VERSION=2.14.1
+
+RUN set -eux; \
+    apk add --no-cache --virtual .build-deps \
+        autoconf \
+        automake \
+        ca-certificates \
+        coreutils \        
+        curl-dev \
+        g++ \
+        gcc \
+        geoip-dev \
+        git \
+        libc-dev \
+        libmaxminddb-dev \
+        libstdc++ \
+        libtool \
+        libxml2-dev \
+        linux-headers \
+        lmdb-dev \
+        make \
+        openssl \
+        openssl-dev \
+        pkgconf \
+        pcre-dev \
+        yajl-dev \
+        zlib-dev \
+        libxslt-dev \
+        gd-dev \
+        brotli-dev \
+        openssl-dev \
+        perl-dev \
+        zeromq-dev
+
+WORKDIR /sources
+
+RUN set -eux; \
+    wget --quiet https://github.com/ssdeep-project/ssdeep/releases/download/release-${SSDEEP_VERSION}/ssdeep-${SSDEEP_VERSION}.tar.gz; \
+    tar -xvzf ssdeep-${SSDEEP_VERSION}.tar.gz; \
+    cd ssdeep-${SSDEEP_VERSION}; \
+    ./configure; \
+    make install
+
+RUN set -eux; \
+    git clone https://github.com/SpiderLabs/ModSecurity --branch v"$MODSEC_VERSION" --depth 1; \
+    cd ModSecurity; \
+    ./build.sh;\
+    git submodule init; \
+    git submodule update; \
+    ./configure --with-yajl --with-ssdeep --with-lmdb --with-geoip; \
+    make install
+
+# We use master
+RUN set -eux; \
+    git clone -b master --depth 1 https://github.com/SpiderLabs/ModSecurity-nginx.git; \
+    wget --quiet http://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz; \
+    tar -xzf nginx-${NGINX_VERSION}.tar.gz; \
+    cd ./nginx-${NGINX_VERSION}; \
+    # nginx build config from https://git.alpinelinux.org/aports/tree/main/nginx/APKBUILD
+    ./configure --add-dynamic-module=../ModSecurity-nginx \
+		--prefix=/var/lib/nginx \
+		--sbin-path=/usr/sbin/nginx \
+		--modules-path=/usr/lib/nginx/modules \
+		--conf-path=/etc/nginx/nginx.conf \
+		--pid-path=/run/nginx/nginx.pid \
+		--lock-path=/run/nginx/nginx.lock \
+		--http-client-body-temp-path=/var/lib/nginx/tmp/client_body \
+		--http-proxy-temp-path=/var/lib/nginx/tmp/proxy \
+		--http-fastcgi-temp-path=/var/lib/nginx/tmp/fastcgi \
+		--http-uwsgi-temp-path=/var/lib/nginx/tmp/uwsgi \
+		--http-scgi-temp-path=/var/lib/nginx/tmp/scgi \
+		--with-perl_modules_path=/usr/lib/perl5/vendor_perl \
+		--user=nginx \
+		--group=nginx \
+		--with-threads \
+		--with-file-aio \
+		--with-http_ssl_module \
+		--with-http_v2_module \
+		--with-http_realip_module \
+		--with-http_addition_module \
+		--with-http_xslt_module=dynamic \
+		--with-http_image_filter_module=dynamic \
+		--with-http_geoip_module=dynamic \
+		--with-http_sub_module \
+		--with-http_dav_module \
+		--with-http_flv_module \
+		--with-http_mp4_module \
+		--with-http_gunzip_module \
+		--with-http_gzip_static_module \
+		--with-http_auth_request_module \
+		--with-http_random_index_module \
+		--with-http_secure_link_module \
+		--with-http_degradation_module \
+		--with-http_slice_module \
+		--with-http_stub_status_module \
+		--with-http_perl_module=dynamic \
+		--with-mail=dynamic \
+		--with-mail_ssl_module \
+		--with-stream=dynamic \
+		--with-stream_ssl_module \
+		--with-stream_realip_module \
+		--with-stream_geoip_module=dynamic \
+		--with-stream_ssl_preread_module; \
+    make modules; \
+    cp objs/ngx_http_modsecurity_module.so /etc/nginx/modules/; \
+    mkdir /etc/modsecurity.d; \
+    wget --quiet https://raw.githubusercontent.com/SpiderLabs/ModSecurity/v3/master/modsecurity.conf-recommended \
+        -O /etc/modsecurity.d/modsecurity.conf; \
+    wget --quiet https://raw.githubusercontent.com/SpiderLabs/ModSecurity/v3/master/unicode.mapping \
+        -O /etc/modsecurity.d/unicode.mapping
+
+FROM linuxserver/swag
+
+ARG MODSEC_VERSION=3.0.6 \
+    FUZZY_VERSION=2.1.0 \
+    SSDEEP_VERSION=2.14.1
+
+RUN set -eux; \
+    apk add --no-cache \
+        curl-dev \
+        libmaxminddb-dev \
+        libstdc++ \
+        libxml2-dev \
+        lmdb-dev \
+        moreutils \
+        tzdata \
+        yajl \
+        sed \
+        iproute2 \
+        ca-certificates \
+        geoip-dev \
+        gettext; \
+    mkdir -p /tmp/modsecurity/data; \
+    mkdir -p /tmp/modsecurity/upload; \
+    mkdir -p /tmp/modsecurity/tmp; \
+    chown -R nginx:nginx /usr/share/nginx /tmp/modsecurity
+
+COPY --from=build /usr/local/modsecurity/lib/libmodsecurity.so.${MODSEC_VERSION} /usr/local/modsecurity/lib/
+COPY --from=build /usr/local/lib/libfuzzy.so.${FUZZY_VERSION} /usr/local/lib/
+COPY --from=build /etc/nginx/modules/ngx_http_modsecurity_module.so /etc/nginx/modules/ngx_http_modsecurity_module.so 
+COPY --from=build /etc/modsecurity.d/unicode.mapping /etc/modsecurity.d/unicode.mapping
+COPY --from=build /etc/modsecurity.d/modsecurity.conf /etc/modsecurity.d/modsecurity.conf
+COPY src/etc/modsecurity.d/modsecurity-override.conf /etc/modsecurity.d/
+COPY crs-src/etc/modsecurity.d/setup.conf /etc/modsecurity.d/
+COPY v3-nginx/conf.d/modsecurity.conf /etc/nginx/conf.d/modsecurity/modsecurity.conf
+
+COPY crs-src/opt/modsecurity/activate-rules.sh /opt/modsecurity/
+
+COPY root/etc/cont-init.d/* /etc/cont-init.d
+
+RUN mkdir /opt/owasp-crs \
+    && curl -SL https://github.com/coreruleset/coreruleset/archive/refs/tags/v3.3.2.tar.gz \
+    | tar -zxf - --strip-components=1 -C /opt/owasp-crs \
+    && mv -v /opt/owasp-crs/crs-setup.conf.example /opt/owasp-crs/crs-setup.conf \
+    && ln -sv /opt/owasp-crs /etc/modsecurity.d/
+
+RUN set -eux; \
+    ln -s /usr/local/modsecurity/lib/libmodsecurity.so.${MODSEC_VERSION} /usr/local/modsecurity/lib/libmodsecurity.so.3.0; \
+    ln -s /usr/local/modsecurity/lib/libmodsecurity.so.${MODSEC_VERSION} /usr/local/modsecurity/lib/libmodsecurity.so.3; \
+    ln -s /usr/local/modsecurity/lib/libmodsecurity.so.${MODSEC_VERSION} /usr/local/modsecurity/lib/libmodsecurity.so; \
+    ln -s /usr/local/lib/libfuzzy.so.${FUZZY_VERSION} /usr/local/lib/libfuzzy.so; \
+    ln -s /usr/local/lib/libfuzzy.so.${FUZZY_VERSION} /usr/local/lib/libfuzzy.so.2; \
+    chgrp -R 0 /var/log/ /var/run/ /usr/share/nginx/ /etc/nginx/ /etc/modsecurity.d/; \
+    chmod -R g=u /var/log/ /var/run/ /usr/share/nginx/ /etc/nginx/ /etc/modsecurity.d/
+
+ENV PARANOIA=1 \
+    ANOMALY_INBOUND=5 \
+    ANOMALY_OUTBOUND=4 \
+    MODSEC_DEFAULT_PHASE1_ACTION="phase:1,pass,log,tag:'\${MODSEC_TAG}'" \
+    MODSEC_DEFAULT_PHASE2_ACTION="phase:2,pass,log,tag:'\${MODSEC_TAG}'" \
+    MODSEC_RULE_ENGINE=on \
+    MODSEC_REQ_BODY_ACCESS=on \
+    MODSEC_REQ_BODY_LIMIT=13107200 \
+    MODSEC_REQ_BODY_NOFILES_LIMIT=131072 \
+    MODSEC_RESP_BODY_ACCESS=on \
+    MODSEC_RESP_BODY_LIMIT=1048576 \
+    MODSEC_PCRE_MATCH_LIMIT=100000 \
+    MODSEC_PCRE_MATCH_LIMIT_RECURSION=100000 \
+    MODSEC_AUDIT_ENGINE="RelevantOnly" \
+    MODSEC_AUDIT_LOG_FORMAT=JSON \
+    MODSEC_AUDIT_LOG_TYPE=Serial \
+    MODSEC_AUDIT_LOG=/dev/stdout \
+    MODSEC_AUDIT_LOG_PARTS='ABIJDEFHZ' \
+    MODSEC_AUDIT_STORAGE=/var/log/modsecurity/audit/ \
+    MODSEC_DATA_DIR=/tmp/modsecurity/data \
+    MODSEC_DEBUG_LOG=/dev/null \
+    MODSEC_DEBUG_LOGLEVEL=0 \
+    MODSEC_PCRE_MATCH_LIMIT_RECURSION=100000 \
+    MODSEC_PCRE_MATCH_LIMIT=100000 \
+    MODSEC_REQ_BODY_ACCESS=on \
+    MODSEC_REQ_BODY_LIMIT=13107200 \
+    MODSEC_REQ_BODY_JSON_DEPTH_LIMIT=512 \
+    MODSEC_REQ_BODY_NOFILES_LIMIT=131072 \
+    MODSEC_RESP_BODY_ACCESS=on \
+    MODSEC_RESP_BODY_LIMIT=1048576 \
+    MODSEC_RESP_BODY_MIMETYPE="text/plain text/html text/xml" \
+    MODSEC_RULE_ENGINE=on \
+    MODSEC_TAG=modsecurity \
+    MODSEC_TMP_DIR=/tmp/modsecurity/tmp \
+    MODSEC_TMP_SAVE_UPLOADED_FILES="on" \
+    MODSEC_UPLOAD_DIR=/tmp/modsecurity/upload \
+    LD_LIBRARY_PATH=/lib:/usr/lib:/usr/local/lib
