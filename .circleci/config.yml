@@ -37,7 +37,6 @@ jobs:
               docker push $DOCKER_ENDPOINT/modsecurity-nginx:manifest-amd64
   
   build-arm64:
-    working_directory: /app
     machine:
       image: ubuntu-2004:202101-01
     resource_class: arm.medium
