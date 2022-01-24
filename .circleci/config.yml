@@ -44,7 +44,7 @@ jobs:
           name: Push application Docker image
           command: |
               docker login -u $DOCKER_HUB_USER_ID -p $DOCKER_HUB_PWD registry.gitlab.com
-              docker tag app "${DOCKER_ENDPOINT}/modsecurity-nginx:latest"
-              docker push "${DOCKER_ENDPOINT}/modsecurity-nginx:$:latest"
+              docker tag app $DOCKER_ENDPOINT/modsecurity-nginx:latest
+              docker push $DOCKER_ENDPOINT/modsecurity-nginx:$:latest
               
 
