@@ -47,6 +47,8 @@ jobs:
       - run:
           name: Build application Docker image
           command: |
+            uname -a
+            docker version
             sudo docker build -t $DOCKER_ENDPOINT/modsecurity-nginx:manifest-arm64v8 --build-arg ARCH=arm64v8/ .
       - run:
           name: Push application Docker image
