@@ -16,7 +16,7 @@ jobs:
     steps:
       - checkout
       - setup_remote_docker:
-          version:  20.10.12
+          version:  20.10.11
       - restore_cache:
           keys:
             - v1-{{ .Branch }}
@@ -46,4 +46,5 @@ jobs:
               docker login -u $DOCKER_HUB_USER_ID -p $DOCKER_HUB_PWD registry.gitlab.com
               docker tag app "${DOCKER_ENDPOINT}/modsecurity-nginx:latest"
               docker push "${DOCKER_ENDPOINT}/modsecurity-nginx:$:latest"
+              
 
