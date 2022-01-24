@@ -32,6 +32,7 @@ jobs:
           name: Push application Docker image
           command: |
               echo "$DOCKER_HUB_PWD" |docker login -u $DOCKER_HUB_USER_ID --password-stdin registry.gitlab.com
+              export DOCKER_CLI_EXPERIMENTAL=enabled
               docker buildx build --push --platform linux/arm64/v8,linux/amd64 --tag $DOCKER_ENDPOINT/modsecurity-nginx:latest .
               # docker tag app $DOCKER_ENDPOINT/modsecurity-nginx:$CIRCLE_SHA1
               # docker tag app $DOCKER_ENDPOINT/modsecurity-nginx:latest
