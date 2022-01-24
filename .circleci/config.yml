@@ -15,26 +15,26 @@ monthly-run-workflow:
 # Define a job to be invoked later in a workflow.
 # See: https://circleci.com/docs/2.0/configuration-reference/#jobs
 jobs:
-  # build-x86:
-  #   working_directory: /app
-  #   docker:
-  #     - image: docker:git
-  #   # Add steps to the job
-  #   # See: https://circleci.com/docs/2.0/configuration-reference/#steps
-  #   steps:
-  #     - checkout
-  #     - setup_remote_docker:
-  #         version:  20.10.11
-  #         # docker_layer_caching: true
-  #     - run:
-  #         name: Build application Docker image
-  #         command: |
-  #           docker build -t $DOCKER_ENDPOINT/modsecurity-nginx:manifest-amd64 --build-arg ARCH=amd64/ .
-  #     - run:
-  #         name: Push application Docker image
-  #         command: |
-  #             echo "$DOCKER_HUB_PWD" |docker login -u $DOCKER_HUB_USER_ID --password-stdin registry.gitlab.com
-  #             docker push $DOCKER_ENDPOINT/modsecurity-nginx:manifest-amd64
+  build-x86:
+    working_directory: /app
+    docker:
+      - image: docker:git
+    # Add steps to the job
+    # See: https://circleci.com/docs/2.0/configuration-reference/#steps
+    steps:
+      - checkout
+      - setup_remote_docker:
+          version:  20.10.11
+          # docker_layer_caching: true
+      - run:
+          name: Build application Docker image
+          command: |
+            docker build -t $DOCKER_ENDPOINT/modsecurity-nginx:manifest-amd64 --build-arg ARCH=amd64/ .
+      - run:
+          name: Push application Docker image
+          command: |
+              echo "$DOCKER_HUB_PWD" |docker login -u $DOCKER_HUB_USER_ID --password-stdin registry.gitlab.com
+              docker push $DOCKER_ENDPOINT/modsecurity-nginx:manifest-amd64
   
   build-arm64:
     machine:
@@ -59,13 +59,21 @@ jobs:
           command: |
               echo "$DOCKER_HUB_PWD" |docker login -u $DOCKER_HUB_USER_ID --password-stdin registry.gitlab.com
               docker push $DOCKER_ENDPOINT/modsecurity-nginx:manifest-arm64v8
-      - run:
-          name: tag images
+  upload-manifest:
+    docker:
+      - image: cimg/python:3.8.2
+    steps:
+      - deploy:
+          name: "Upload manifest to registry"
           command: |
+              set -eu
+              export DOCKER_CLI_EXPERIMENTAL=enabled
+              echo "$DOCKER_HUB_PWD" |docker login -u $DOCKER_HUB_USER_ID --password-stdin registry.gitlab.com
               docker manifest create $DOCKER_ENDPOINT/modsecurity-nginx:latest \
               --amend $DOCKER_ENDPOINT/modsecurity-nginx:manifest-arm64v8 \
               --amend $DOCKER_ENDPOINT/modsecurity-nginx:manifest-amd64
               docker manifest push $DOCKER_ENDPOINT/modsecurity-nginx:latest
+
               docker manifest create $DOCKER_ENDPOINT/modsecurity-nginx:$CIRCLE_SHA1 \
               --amend $DOCKER_ENDPOINT/modsecurity-nginx:manifest-arm64v8 \
               --amend $DOCKER_ENDPOINT/modsecurity-nginx:manifest-amd64
@@ -74,7 +82,11 @@ jobs:
 workflows:
   build:
     jobs:
-      # - build-x86
+      - build-x86
       - build-arm64
+      - upload-manifest:
+          requires:
+            - build-x86
+            - build-arm64
               
 
